@@ -3,8 +3,7 @@ package mdata
 import (
 	"sync"
 
-	"github.com/dgryski/go-tsz"
-	"github.com/raintank/metrictank/mdata/chunk"
+	"gopkg.in/raintank/schema.v1"
 )
 
 var bufPool = sync.Pool{New: func() interface{} { return &entry{} }}
@@ -16,11 +15,11 @@ var bufPool = sync.Pool{New: func() interface{} { return &entry{} }}
  */
 
 type WriteBuffer struct {
-	reorderWindow uint32      // how many datapoints are allowed to be out of order
-	first         *entry      // first buffer entry
-	last          *entry      // last buffer entry
-	interval      uint32      // seconds per datapoint
-	chunk         *tsz.Series // used to cache the return value of Get()
+	reorderWindow uint32 // how many datapoints are allowed to be out of order
+	first         *entry // first buffer entry
+	last          *entry // last buffer entry
+	interval      uint32 // seconds per datapoint
+	len           uint32
 }
 
 type entry struct {
@@ -50,6 +49,7 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 	if wb.first == nil {
 		wb.first = e
 		wb.last = e
+		wb.len++
 		return true
 	}
 
@@ -62,19 +62,13 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 			}
 			e.prev = i
 			i.next = e
-
-			if wb.chunk != nil {
-				if wb.chunk.T0 < i.ts {
-					wb.chunk.Push(i.ts, i.val)
-				} else {
-					wb.chunk = nil
-				}
-			}
+			wb.len++
 
 			return true
 		}
 		// overwrite and return
 		if ts == i.ts {
+			i.val = val
 			return true
 		}
 	}
@@ -83,6 +77,7 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 	wb.first.prev = e
 	e.next = wb.first
 	wb.first = e
+	wb.len++
 	return true
 }
 
@@ -92,18 +87,13 @@ func (wb *WriteBuffer) Flush(now, upTo uint32, push func(uint32, float64)) {
 		upTo = keepFrom
 	}
 
-	if wb.first == nil || wb.first.ts >= upTo {
-		return
-	}
 	i := wb.first
-	wb.chunk = nil
-
-	// process datapoints up to upTo timestamp
 	for {
-		push(i.ts, i.val)
-		if i.next == nil || i.next.ts >= upTo {
+		if i == nil || i.ts >= upTo {
 			break
 		}
+		push(i.ts, i.val)
+		wb.len--
 		recycle := i
 		i = i.next
 		bufPool.Put(recycle)
@@ -118,18 +108,15 @@ func (wb *WriteBuffer) Flush(now, upTo uint32, push func(uint32, float64)) {
 	}
 }
 
-func (wb *WriteBuffer) Get() *chunk.Iter {
+func (wb *WriteBuffer) Get() []schema.Point {
 	if wb.first == nil {
 		return nil
 	}
 
-	if wb.chunk == nil {
-		wb.chunk = tsz.New(wb.first.ts)
-		for i := wb.first; i.next != nil; i = i.next {
-			wb.chunk.Push(i.ts, i.val)
-		}
+	res := make([]schema.Point, 0, wb.len)
+	for i := wb.first; i.next != nil; i = i.next {
+		res = append(res, schema.Point{Val: i.val, Ts: i.ts})
 	}
 
-	it := chunk.NewIter(wb.chunk.Iter())
-	return &it
+	return res
 }
