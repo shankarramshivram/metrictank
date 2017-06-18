@@ -15,10 +15,12 @@ var bufPool = sync.Pool{New: func() interface{} { return &entry{} }}
  */
 
 type WriteBuffer struct {
-	reorderWindow uint32 // window size in seconds during which out of order is allowed
+	reorderWindow uint32 // window size in datapoints during which out of order is allowed
+	interval      uint32 // seconds per datapoint
+	len           uint32
+	flushMin      uint32 // min count of datapoints to flush
 	first         *entry // first buffer entry
 	last          *entry // last buffer entry
-	len           uint32
 }
 
 type entry struct {
@@ -27,9 +29,12 @@ type entry struct {
 	next, prev *entry
 }
 
-func NewWriteBuffer(reorderWindow uint32) *WriteBuffer {
+func NewWriteBuffer(reorderWindow, interval, flushMin uint32) *WriteBuffer {
 	return &WriteBuffer{
 		reorderWindow: reorderWindow,
+		interval:      interval,
+		// we don't want to flush unless we have at least flushMin + reorderWindow datapoints
+		flushMin: flushMin + reorderWindow,
 	}
 }
 
@@ -42,6 +47,7 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 	e := bufPool.Get().(*entry)
 	e.ts = ts
 	e.val = val
+	addCount := uint32(0)
 
 	// initializing the linked list
 	if wb.first == nil {
@@ -49,44 +55,48 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 		e.prev = nil
 		wb.first = e
 		wb.last = e
-		wb.len++
-		return true
-	}
-
-	// in the normal case data should be added in order, so this will only iterate once
-	for i := wb.last; i != nil; i = i.prev {
-		if ts > i.ts {
-			if i.next == nil {
-				e.next = nil
-				wb.last = e
-			} else {
-				e.next = i.next
-				e.next.prev = e
+		addCount = 1
+	} else {
+		inserted := false
+		// in the normal case data should be added in order, so this will only iterate once
+		for i := wb.last; i != nil; i = i.prev {
+			if ts > i.ts {
+				if i.next == nil {
+					e.next = nil
+					wb.last = e
+				} else {
+					e.next = i.next
+					e.next.prev = e
+				}
+				e.prev = i
+				i.next = e
+				addCount = 1
+				inserted = true
+				break
 			}
-			e.prev = i
-			i.next = e
-			wb.len++
-			return true
+			// overwrite and return
+			if ts == i.ts {
+				i.val = val
+				inserted = true
+				break
+			}
 		}
-		// overwrite and return
-		if ts == i.ts {
-			i.val = val
-			return true
+		if !inserted {
+			// unlikely case where the added entry is the oldest one present
+			e.prev = nil
+			e.next = wb.first
+			wb.first.prev = e
+			wb.first = e
+			wb.len += addCount
 		}
 	}
 
-	// unlikely case where the added entry is the oldest one present
-	e.prev = nil
-	e.next = wb.first
-	wb.first.prev = e
-	wb.first = e
-	wb.len++
 	return true
 }
 
 func (wb *WriteBuffer) Flush(now, upTo uint32, push func(uint32, float64)) {
-	keepFrom := now - wb.reorderWindow
-	if upTo > keepFrom {
+	keepFrom := now - (wb.reorderWindow * wb.interval)
+	if upTo == 0 || upTo > keepFrom {
 		upTo = keepFrom
 	}
 
