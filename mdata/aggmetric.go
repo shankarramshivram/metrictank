@@ -26,6 +26,7 @@ type AggMetric struct {
 	cachePusher cache.CachePusher
 	sync.RWMutex
 	Key             string
+	wb              WriteBuffer
 	CurrentChunkPos int    // element in []Chunks that is active. All others are either finished or nil.
 	NumChunks       uint32 // max size of the circular buffer
 	ChunkSpan       uint32 // span of individual chunks in seconds
@@ -402,8 +403,12 @@ func (a *AggMetric) persist(pos int) {
 	return
 }
 
-// don't ever call with a ts of 0, cause we use 0 to mean not initialized!
 func (a *AggMetric) Add(ts uint32, val float64) {
+	a.wb.Add(ts, val)
+}
+
+// don't ever call with a ts of 0, cause we use 0 to mean not initialized!
+func (a *AggMetric) add(ts uint32, val float64) {
 	a.Lock()
 	defer a.Unlock()
 

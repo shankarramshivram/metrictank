@@ -15,12 +15,16 @@ var bufPool = sync.Pool{New: func() interface{} { return &entry{} }}
  */
 
 type WriteBuffer struct {
+	sync.RWMutex
 	reorderWindow uint32 // window size in datapoints during which out of order is allowed
 	interval      uint32 // seconds per datapoint
 	len           uint32
-	flushMin      uint32 // min count of datapoints to flush
-	first         *entry // first buffer entry
-	last          *entry // last buffer entry
+	lastFlush     uint32                // the timestamp of the last point that's been flushed
+	flushMin      uint32                // min count of datapoints to trigger a flush on
+	first         *entry                // first buffer entry
+	last          *entry                // last buffer entry
+	flushStart    *entry                // entry from where a flush will start to walk the list
+	flush         func(uint32, float64) //flushing function
 }
 
 type entry struct {
@@ -29,25 +33,28 @@ type entry struct {
 	next, prev *entry
 }
 
-func NewWriteBuffer(reorderWindow, interval, flushMin uint32) *WriteBuffer {
+func NewWriteBuffer(reorderWindow, interval, flushMin uint32, flush func(uint32, float64)) *WriteBuffer {
 	return &WriteBuffer{
 		reorderWindow: reorderWindow,
 		interval:      interval,
 		// we don't want to flush unless we have at least flushMin + reorderWindow datapoints
 		flushMin: flushMin + reorderWindow,
+		flush:    flush,
 	}
 }
 
 func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
+	wb.Lock()
+	defer wb.Unlock()
+
 	// out of order and too old
-	if wb.first != nil && ts < wb.first.ts {
+	if ts < wb.lastFlush {
 		return false
 	}
 
 	e := bufPool.Get().(*entry)
 	e.ts = ts
 	e.val = val
-	addCount := uint32(0)
 
 	// initializing the linked list
 	if wb.first == nil {
@@ -55,70 +62,72 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 		e.prev = nil
 		wb.first = e
 		wb.last = e
-		addCount = 1
+		wb.len++
 	} else {
-		inserted := false
 		// in the normal case data should be added in order, so this will only iterate once
 		for i := wb.last; i != nil; i = i.prev {
 			if ts > i.ts {
 				if i.next == nil {
-					e.next = nil
 					wb.last = e
 				} else {
-					e.next = i.next
-					e.next.prev = e
+					i.next.prev = e
 				}
+				e.next = i.next
 				e.prev = i
 				i.next = e
-				addCount = 1
-				inserted = true
+				e = nil
+				wb.len++
 				break
 			}
-			// overwrite and return
+			// overwrite value
 			if ts == i.ts {
 				i.val = val
-				inserted = true
+				e = nil
 				break
 			}
 		}
-		if !inserted {
+		if e != nil {
 			// unlikely case where the added entry is the oldest one present
 			e.prev = nil
 			e.next = wb.first
 			wb.first.prev = e
 			wb.first = e
-			wb.len += addCount
+			wb.len++
 		}
 	}
 
 	return true
 }
 
-func (wb *WriteBuffer) Flush(now, upTo uint32, push func(uint32, float64)) {
-	keepFrom := now - (wb.reorderWindow * wb.interval)
-	if upTo == 0 || upTo > keepFrom {
-		upTo = keepFrom
+// if buffer is ready for flushing, this will flush
+func (wb *WriteBuffer) FlushIfReady() {
+	wb.RLock()
+	// not enough data, not ready to flush
+	if wb.len < wb.flushMin {
+		wb.RUnlock()
+		return
 	}
 
-	i := wb.first
-	for {
-		if i == nil || i.ts >= upTo {
-			break
-		}
-		push(i.ts, i.val)
-		wb.len--
-		recycle := i
-		i = i.next
-		bufPool.Put(recycle)
+	// seek the entry up to which we'll want to flush
+	flushEnd := wb.last
+	for cnt := uint32(0); cnt < wb.reorderWindow; flushEnd = flushEnd.prev {
+		cnt++
 	}
 
-	if i.next == nil {
-		wb.first = nil
-		wb.last = nil
-	} else {
-		i.prev = nil
-		wb.first = i
+	wb.RUnlock()
+
+	// split the list at flushEnd and then flush the older part
+	wb.Lock()
+	defer wb.Unlock()
+
+	for i := wb.first; i != flushEnd.next; i = i.next {
+		wb.flush(i.ts, i.val)
+		bufPool.Put(i)
 	}
+
+	wb.first = flushEnd.next
+	wb.first.prev = nil
+	wb.lastFlush = wb.first.ts
 }
 
 func (wb *WriteBuffer) Get() []schema.Point {
