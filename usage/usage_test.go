@@ -98,7 +98,7 @@ func DisabledTestUsageBasic(t *testing.T) {
 	metricIndex := memory.New()
 	metricIndex.Init()
 	interval := uint32(60)
-	u := New(interval, aggmetrics, metricIndex, mock)
+	u := New(interval, aggmetrics, metricIndex, mock, []int32{1})
 
 	assertLen(0, aggmetrics, 0, t)
 
@@ -135,7 +135,7 @@ func DisabledTestUsageMinusOne(t *testing.T) {
 	metricIndex := memory.New()
 	metricIndex.Init()
 	interval := uint32(60)
-	u := New(interval, aggmetrics, metricIndex, mock)
+	u := New(interval, aggmetrics, metricIndex, mock, []int32{1})
 
 	assertLen(0, aggmetrics, 0, t)
 
@@ -166,7 +166,7 @@ func DisabledTestUsageWrap32(t *testing.T) {
 	metricIndex := memory.New()
 	metricIndex.Init()
 	interval := uint32(60)
-	u := New(interval, aggmetrics, metricIndex, mock)
+	u := New(interval, aggmetrics, metricIndex, mock, []int32{1})
 
 	// max uint32 is 4294967295, let's verify the proper wrapping around that
 	// pretend an insert maxuint32 -900000

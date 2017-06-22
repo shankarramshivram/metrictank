@@ -7,6 +7,7 @@ import (
 	"github.com/raintank/metrictank/idx"
 	"github.com/raintank/metrictank/mdata"
 	"gopkg.in/raintank/schema.v1"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -23,20 +24,29 @@ type orgstat struct {
 // tracks for every org
 type Usage struct {
 	sync.Mutex
-	period uint32
-	now    map[int]orgstat
-	prev   map[int]orgstat
-	stop   chan struct{}
+	period    uint32
+	now       map[int]orgstat
+	prev      map[int]orgstat
+	stop      chan struct{}
+	shardID   string
+	partition int32
 }
 
-func New(period uint32, m mdata.Metrics, i idx.MetricIndex, cl clock.Clock) *Usage {
+func New(period uint32, m mdata.Metrics, i idx.MetricIndex, cl clock.Clock, partitions []int32) *Usage {
 	metrics = m
 	metricIndex = i
 	Clock = cl
+	partition := partitions[0]
+	shardID := "shard"
+	for _, p := range partitions {
+		shardID += "-" + strconv.FormatInt(int64(p), 10)
+	}
 	ret := &Usage{
-		period: period,
-		now:    make(map[int]orgstat),
-		stop:   make(chan struct{}),
+		period:    period,
+		now:       make(map[int]orgstat),
+		stop:      make(chan struct{}),
+		shardID:   shardID,
+		partition: partition,
 	}
 	go ret.Report()
 	return ret
@@ -102,7 +112,7 @@ func (u *Usage) Report() {
 		met.SetId()
 
 		//TODO: how to set the partition of the metric?  We probably just need to publish the metric to our Input Plugin
-		archive := metricIndex.AddOrUpdate(met, 0)
+		archive := metricIndex.AddOrUpdate(met, u.partition)
 
 		m := metrics.GetOrCreate(met.Id, met.Metric, archive.SchemaId, archive.AggId)
 		m.Add(uint32(met.Time), met.Value)
@@ -134,12 +144,12 @@ func (u *Usage) Report() {
 				// the reason we don't publish this with id -1 is that that would make it available to everyone
 				// and confuse people about which metrics it counts
 				met.OrgId = 1
-				report("metrictank.usage-minus1.numSeries", "serie", "gauge", float64(len(stat.keys)), &met)
-				report("metrictank.usage-minus1.numPoints", "point", "counter", float64(stat.points), &met)
+				report("metrictank."+u.shardID+".usage-minus1.numSeries", "serie", "gauge", float64(len(stat.keys)), &met)
+				report("metrictank."+u.shardID+".usage-minus1.numPoints", "point", "counter", float64(stat.points), &met)
 			} else {
 				met.OrgId = org
-				report("metrictank.usage.numSeries", "serie", "gauge", float64(len(stat.keys)), &met)
-				report("metrictank.usage.numPoints", "point", "counter", float64(stat.points), &met)
+				report("metrictank."+u.shardID+".usage.numSeries", "serie", "gauge", float64(len(stat.keys)), &met)
+				report("metrictank."+u.shardID+".usage.numPoints", "point", "counter", float64(stat.points), &met)
 			}
 		}
 	}

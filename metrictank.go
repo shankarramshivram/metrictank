@@ -357,7 +357,8 @@ func main() {
 	/***********************************
 		Initialize usage Reporting
 	***********************************/
-	usg := usage.New(accountingPeriod, metrics, metricIndex, clock.New())
+	partitions := cluster.Manager.GetPartitions()
+	usg := usage.New(accountingPeriod, metrics, metricIndex, clock.New(), partitions)
 
 	/***********************************
 		Start our inputs
