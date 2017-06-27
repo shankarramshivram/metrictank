@@ -9,6 +9,12 @@ import (
 	"github.com/alyu/configparser"
 )
 
+type WriteBufferConf struct {
+	Enabled       bool
+	ReorderWindow uint32
+	FlushMin      uint32
+}
+
 // Aggregations holds the aggregation definitions
 type Aggregations struct {
 	Data               []Aggregation
@@ -20,6 +26,7 @@ type Aggregation struct {
 	Pattern           *regexp.Regexp
 	XFilesFactor      float64
 	AggregationMethod []Method
+	WriteBufferConf   WriteBufferConf
 }
 
 // NewAggregations create instance of Aggregations
@@ -31,6 +38,7 @@ func NewAggregations() Aggregations {
 			Pattern:           regexp.MustCompile(".*"),
 			XFilesFactor:      0.5,
 			AggregationMethod: []Method{Avg},
+			WriteBufferConf:   WriteBufferConf{},
 		},
 	}
 }
@@ -82,6 +90,31 @@ func ReadAggregations(file string) (Aggregations, error) {
 				item.AggregationMethod = append(item.AggregationMethod, Min)
 			default:
 				return result, fmt.Errorf("[%s]: unknown aggregation method %q", item.Name, methodStr)
+			}
+		}
+
+		writeBufferStr := s.ValueOf("writeBuffer")
+		if len(writeBufferStr) > 0 {
+			writeBufferStrs := strings.Split(writeBufferStr, ",")
+			if len(writeBufferStrs) > 0 {
+				err = fmt.Errorf("[%s]: Failed to parse write buffer conf, expected 2 parts: %s", item.Name, writeBufferStr)
+				return Aggregations{}, err
+			}
+
+			reorderWindow, err := strconv.ParseUint(writeBufferStrs[0], 10, 32)
+			if err != nil {
+				err = fmt.Errorf("[%s]: Failed to parse write buffer conf, expected 2 numbers: %s", item.Name, writeBufferStr)
+				return Aggregations{}, err
+			}
+			flushMin, err := strconv.ParseUint(writeBufferStrs[1], 10, 32)
+			if err != nil {
+				err = fmt.Errorf("[%s]: Failed to parse write buffer conf, expected 2 numbers: %s", item.Name, writeBufferStr)
+				return Aggregations{}, err
+			}
+			item.WriteBufferConf = WriteBufferConf{
+				ReorderWindow: uint32(reorderWindow),
+				FlushMin:      uint32(flushMin),
+				Enabled:       true,
 			}
 		}
 

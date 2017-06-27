@@ -62,6 +62,10 @@ func NewAggMetric(store Store, cachePusher cache.CachePusher, key string, retent
 		// garbage collected right after creating it, before we can push to it.
 		lastWrite: uint32(time.Now().Unix()),
 	}
+	if agg.WriteBufferConf.Enabled {
+		m.wb.Init(&agg.WriteBufferConf, uint32(ret.SecondsPerPoint), m.Add)
+	}
+
 	for _, ret := range retentions[1:] {
 		m.aggregators = append(m.aggregators, NewAggregator(store, cachePusher, key, ret, *agg, dropFirstChunk))
 	}

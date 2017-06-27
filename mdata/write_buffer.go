@@ -3,6 +3,7 @@ package mdata
 import (
 	"sync"
 
+	"github.com/raintank/metrictank/conf"
 	"gopkg.in/raintank/schema.v1"
 )
 
@@ -33,14 +34,11 @@ type entry struct {
 	next, prev *entry
 }
 
-func NewWriteBuffer(reorderWindow, interval, flushMin uint32, flush func(uint32, float64)) *WriteBuffer {
-	return &WriteBuffer{
-		reorderWindow: reorderWindow,
-		interval:      interval,
-		// we don't want to flush unless we have at least flushMin + reorderWindow datapoints
-		flushMin: flushMin + reorderWindow,
-		flush:    flush,
-	}
+func (wb *WriteBuffer) Init(conf *conf.WriteBufferConf, interval uint32, flush func(uint32, float64)) {
+	wb.reorderWindow = conf.ReorderWindow
+	wb.interval = interval
+	wb.flushMin = conf.FlushMin
+	wb.flush = flush
 }
 
 func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
