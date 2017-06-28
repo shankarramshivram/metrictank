@@ -10,7 +10,6 @@ import (
 )
 
 type WriteBufferConf struct {
-	Enabled       bool
 	ReorderWindow uint32
 	FlushMin      uint32
 }
@@ -26,7 +25,7 @@ type Aggregation struct {
 	Pattern           *regexp.Regexp
 	XFilesFactor      float64
 	AggregationMethod []Method
-	WriteBufferConf   WriteBufferConf
+	WriteBufferConf   *WriteBufferConf
 }
 
 // NewAggregations create instance of Aggregations
@@ -38,7 +37,6 @@ func NewAggregations() Aggregations {
 			Pattern:           regexp.MustCompile(".*"),
 			XFilesFactor:      0.5,
 			AggregationMethod: []Method{Avg},
-			WriteBufferConf:   WriteBufferConf{},
 		},
 	}
 }
@@ -111,10 +109,9 @@ func ReadAggregations(file string) (Aggregations, error) {
 				err = fmt.Errorf("[%s]: Failed to parse write buffer conf, expected 2 numbers: %s", item.Name, writeBufferStr)
 				return Aggregations{}, err
 			}
-			item.WriteBufferConf = WriteBufferConf{
+			item.WriteBufferConf = &WriteBufferConf{
 				ReorderWindow: uint32(reorderWindow),
 				FlushMin:      uint32(flushMin),
-				Enabled:       true,
 			}
 		}
 

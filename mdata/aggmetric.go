@@ -26,7 +26,7 @@ type AggMetric struct {
 	cachePusher cache.CachePusher
 	sync.RWMutex
 	Key             string
-	wb              WriteBuffer
+	wb              *WriteBuffer
 	CurrentChunkPos int    // element in []Chunks that is active. All others are either finished or nil.
 	NumChunks       uint32 // max size of the circular buffer
 	ChunkSpan       uint32 // span of individual chunks in seconds
@@ -62,8 +62,8 @@ func NewAggMetric(store Store, cachePusher cache.CachePusher, key string, retent
 		// garbage collected right after creating it, before we can push to it.
 		lastWrite: uint32(time.Now().Unix()),
 	}
-	if agg.WriteBufferConf.Enabled {
-		m.wb.Init(&agg.WriteBufferConf, uint32(ret.SecondsPerPoint), m.Add)
+	if agg != nil && agg.WriteBufferConf != nil {
+		m.wb = NewWriteBuffer(agg.WriteBufferConf, uint32(ret.SecondsPerPoint), m.Add)
 	}
 
 	for _, ret := range retentions[1:] {
@@ -408,7 +408,15 @@ func (a *AggMetric) persist(pos int) {
 }
 
 func (a *AggMetric) Add(ts uint32, val float64) {
-	a.wb.Add(ts, val)
+	if a.wb == nil {
+		// write directly
+		a.add(ts, val)
+	} else {
+		// write through write buffer, returns false if ts is out of reorder window
+		if !a.wb.Add(ts, val) {
+			metricsTooOld.Inc()
+		}
+	}
 }
 
 // don't ever call with a ts of 0, cause we use 0 to mean not initialized!

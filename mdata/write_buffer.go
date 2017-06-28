@@ -34,11 +34,13 @@ type entry struct {
 	next, prev *entry
 }
 
-func (wb *WriteBuffer) Init(conf *conf.WriteBufferConf, interval uint32, flush func(uint32, float64)) {
-	wb.reorderWindow = conf.ReorderWindow
-	wb.interval = interval
-	wb.flushMin = conf.FlushMin
-	wb.flush = flush
+func NewWriteBuffer(conf *conf.WriteBufferConf, interval uint32, flush func(uint32, float64)) *WriteBuffer {
+	return &WriteBuffer{
+		reorderWindow: conf.ReorderWindow,
+		interval:      interval,
+		flushMin:      conf.FlushMin,
+		flush:         flush,
+	}
 }
 
 func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
