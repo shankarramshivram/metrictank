@@ -3,17 +3,19 @@ package mdata
 import (
 	"testing"
 
+	"github.com/raintank/metrictank/conf"
 	"gopkg.in/raintank/schema.v1"
 )
 
-func testAddAndGet(t *testing.T, testData, expectedData []schema.Point, expectAddFail bool) {
-	b := NewWriteBuffer(600, 1, 30, nil)
+func testAddAndGet(t *testing.T, conf *conf.WriteBufferConf, collector func(uint32, float64), testData, expectedData []schema.Point, expectAddFail bool) {
+	b := NewWriteBuffer(conf, collector)
 	gotFailure := false
 	for _, point := range testData {
 		success := b.Add(point.Ts, point.Val)
 		if !success {
 			gotFailure = true
 		}
+		b.FlushIfReady()
 	}
 	if expectAddFail && !gotFailure {
 		t.Fatal("Expected an add to fail, but they all succeeded")
@@ -23,11 +25,21 @@ func testAddAndGet(t *testing.T, testData, expectedData []schema.Point, expectAd
 	if len(expectedData) != len(returned) {
 		t.Fatal("Length of returned and testData data unequal")
 	}
-	for i, _ := range expectedData {
-		if expectedData[i] != returned[i] {
-			t.Fatal("Returned data does not match testData data %v, %v", testData[i], returned[i])
+	if !pointSlicesAreEqual(expectedData, returned) {
+		t.Fatal("Returned data does not match testData data %+v, %+v", testData, returned)
+	}
+}
+
+func pointSlicesAreEqual(a, b []schema.Point) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, _ := range a {
+		if (a[i].Ts != b[i].Ts) || (a[i].Val != b[i].Val) {
+			return false
 		}
 	}
+	return true
 }
 
 func unsort(data []schema.Point, unsortBy int) []schema.Point {
@@ -89,10 +101,11 @@ func TestAddAndGetInOrder(t *testing.T) {
 		{Ts: 2, Val: 200},
 		{Ts: 3, Val: 300},
 	}
-	testAddAndGet(t, testData, expectedData, false)
+	conf := &conf.WriteBufferConf{ReorderWindow: 600, FlushMin: 1}
+	testAddAndGet(t, conf, nil, testData, expectedData, false)
 }
 
-func TestAddAndGetInReverseOrder(t *testing.T) {
+func TestAddAndGetInReverseOrderOutOfWindow(t *testing.T) {
 	testData := []schema.Point{
 		{Ts: 3, Val: 300},
 		{Ts: 2, Val: 200},
@@ -101,10 +114,12 @@ func TestAddAndGetInReverseOrder(t *testing.T) {
 	expectedData := []schema.Point{
 		{Ts: 3, Val: 300},
 	}
-	testAddAndGet(t, testData, expectedData, true)
+	conf := &conf.WriteBufferConf{ReorderWindow: 1, FlushMin: 1}
+	collector := func(ts uint32, val float64) {}
+	testAddAndGet(t, conf, collector, testData, expectedData, true)
 }
 
-func TestAddAndGetInMessedUpOrder(t *testing.T) {
+func TestAddAndGetOutOfOrderInsideWindow(t *testing.T) {
 	testData := []schema.Point{
 		{Ts: 1, Val: 100},
 		{Ts: 2, Val: 200},
@@ -127,7 +142,83 @@ func TestAddAndGetInMessedUpOrder(t *testing.T) {
 		{Ts: 8, Val: 800},
 		{Ts: 9, Val: 900},
 	}
-	testAddAndGet(t, testData, expectedData, false)
+	conf := &conf.WriteBufferConf{ReorderWindow: 600, FlushMin: 1}
+	testAddAndGet(t, conf, nil, testData, expectedData, false)
+}
+
+func TestAddAndGetOutOfOrderInsideWindowAsFirstPoint(t *testing.T) {
+	testData := []schema.Point{
+		{Ts: 2, Val: 200},
+		{Ts: 4, Val: 400},
+		{Ts: 3, Val: 300},
+		{Ts: 5, Val: 500},
+		{Ts: 1, Val: 100},
+		{Ts: 6, Val: 600},
+		{Ts: 8, Val: 800},
+		{Ts: 7, Val: 700},
+		{Ts: 9, Val: 900},
+	}
+	expectedData := []schema.Point{
+		{Ts: 1, Val: 100},
+		{Ts: 2, Val: 200},
+		{Ts: 3, Val: 300},
+		{Ts: 4, Val: 400},
+		{Ts: 5, Val: 500},
+		{Ts: 6, Val: 600},
+		{Ts: 7, Val: 700},
+		{Ts: 8, Val: 800},
+		{Ts: 9, Val: 900},
+	}
+	conf := &conf.WriteBufferConf{ReorderWindow: 600, FlushMin: 1}
+	testAddAndGet(t, conf, nil, testData, expectedData, false)
+}
+
+func TestOmitFlushIfNotEnoughData(t *testing.T) {
+	conf := &conf.WriteBufferConf{ReorderWindow: 9, FlushMin: 1}
+	collector := func(ts uint32, val float64) {
+		t.Fatalf("Expected the flush function to not get called")
+	}
+	b := NewWriteBuffer(conf, collector)
+	for i := uint32(1); i < 10; i++ {
+		b.Add(i, float64(i*100))
+	}
+	b.FlushIfReady()
+}
+
+func TestAddAndGetOutOfOrderOutOfWindow(t *testing.T) {
+	testData := []schema.Point{
+		{Ts: 1, Val: 100},
+		{Ts: 4, Val: 400},
+		{Ts: 3, Val: 300},
+		{Ts: 5, Val: 500},
+		{Ts: 6, Val: 600},
+		{Ts: 8, Val: 800},
+		{Ts: 7, Val: 700},
+		{Ts: 9, Val: 900},
+		{Ts: 2, Val: 200},
+	}
+	expectedData := []schema.Point{
+		{Ts: 5, Val: 500},
+		{Ts: 6, Val: 600},
+		{Ts: 7, Val: 700},
+		{Ts: 8, Val: 800},
+		{Ts: 9, Val: 900},
+	}
+	flushedData := []schema.Point{}
+	// point 2 should be missing because out of reorder window
+	expectedFlushedData := []schema.Point{
+		{Ts: 1, Val: 100},
+		{Ts: 3, Val: 300},
+		{Ts: 4, Val: 400},
+	}
+	conf := &conf.WriteBufferConf{ReorderWindow: 5, FlushMin: 1}
+	collector := func(ts uint32, val float64) {
+		flushedData = append(flushedData, schema.Point{Ts: ts, Val: val})
+	}
+	testAddAndGet(t, conf, collector, testData, expectedData, true)
+	if !pointSlicesAreEqual(flushedData, expectedFlushedData) {
+		t.Fatal("Flushed data does not match expected flushed data: %+v %+v", flushedData, expectedFlushedData)
+	}
 }
 
 func TestFlushSortedData(t *testing.T) {
@@ -137,7 +228,7 @@ func TestFlushSortedData(t *testing.T) {
 		results[resultI] = schema.Point{Ts: ts, Val: val}
 		resultI++
 	}
-	buf := NewWriteBuffer(600, 1, 30, receiver)
+	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: 600, FlushMin: 1}, receiver)
 	for i := 100; i < 1100; i++ {
 		buf.Add(uint32(i), float64(i))
 	}
@@ -157,7 +248,7 @@ func TestFlushUnsortedData(t *testing.T) {
 		results[resultI] = schema.Point{Ts: ts, Val: val}
 		resultI++
 	}
-	buf := NewWriteBuffer(600, 1, 3, receiver)
+	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: 600, FlushMin: 1}, receiver)
 	data := make([]schema.Point, 1000)
 	for i := 0; i < 1000; i++ {
 		data[i] = schema.Point{Ts: uint32(i + 100), Val: float64(i + 100)}
@@ -178,7 +269,7 @@ func BenchmarkAddInOrder(b *testing.B) {
 	data := make([]schema.Point, b.N)
 	b.ResetTimer()
 
-	buf := NewWriteBuffer(uint32(b.N), 1, 100, nil)
+	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 1}, nil)
 	for i := 0; i < b.N; i++ {
 		buf.Add(data[i].Ts, data[i].Val)
 	}
@@ -189,7 +280,7 @@ func BenchmarkAddOutOfOrder(b *testing.B) {
 	unsortedData := unsort(data, 10)
 	b.ResetTimer()
 
-	buf := NewWriteBuffer(uint32(b.N), 1, 100, nil)
+	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 1}, nil)
 	for i := 0; i < b.N; i++ {
 		buf.Add(unsortedData[i].Ts, unsortedData[i].Val)
 	}

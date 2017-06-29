@@ -1,6 +1,7 @@
 package mdata
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/raintank/metrictank/conf"
@@ -18,7 +19,6 @@ var bufPool = sync.Pool{New: func() interface{} { return &entry{} }}
 type WriteBuffer struct {
 	sync.RWMutex
 	reorderWindow uint32 // window size in datapoints during which out of order is allowed
-	interval      uint32 // seconds per datapoint
 	len           uint32
 	lastFlush     uint32                // the timestamp of the last point that's been flushed
 	flushMin      uint32                // min count of datapoints to trigger a flush on
@@ -34,10 +34,9 @@ type entry struct {
 	next, prev *entry
 }
 
-func NewWriteBuffer(conf *conf.WriteBufferConf, interval uint32, flush func(uint32, float64)) *WriteBuffer {
+func NewWriteBuffer(conf *conf.WriteBufferConf, flush func(uint32, float64)) *WriteBuffer {
 	return &WriteBuffer{
 		reorderWindow: conf.ReorderWindow,
-		interval:      interval,
 		flushMin:      conf.FlushMin,
 		flush:         flush,
 	}
@@ -99,11 +98,11 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 	return true
 }
 
-// if buffer is ready for flushing, this will flush
+// if buffer is ready for flushing, this will flush it
 func (wb *WriteBuffer) FlushIfReady() {
 	wb.RLock()
 	// not enough data, not ready to flush
-	if wb.len < wb.flushMin {
+	if wb.len < wb.flushMin+wb.reorderWindow {
 		wb.RUnlock()
 		return
 	}
@@ -120,14 +119,35 @@ func (wb *WriteBuffer) FlushIfReady() {
 	wb.Lock()
 	defer wb.Unlock()
 
-	for i := wb.first; i != flushEnd.next; i = i.next {
+	//panic(fmt.Sprintf("flushEnd: %p\nbuffer: %s", flushEnd, wb.formatted()))
+	for i := wb.first; ; i = i.next {
 		wb.flush(i.ts, i.val)
 		bufPool.Put(i)
+		if i == flushEnd {
+			break
+		}
 	}
 
+	wb.len = wb.reorderWindow
 	wb.first = flushEnd.next
 	wb.first.prev = nil
 	wb.lastFlush = wb.first.ts
+}
+
+// returns a formatted string that shows the current buffer content,
+// only used for debugging purposes and should never be called in prod
+func (wb *WriteBuffer) formatted() string {
+	var str string
+	var id int
+	str = fmt.Sprintf("Buffer len: %d first: %p last: %p \n", wb.len, wb.first, wb.last)
+	for i := wb.first; i != nil; i = i.next {
+		str = fmt.Sprintf(
+			"%sId: %d ts: %d val: %f addr: %p prev: %p next: %p\n",
+			str, id, i.ts, i.val, i, i.prev, i.next,
+		)
+		id++
+	}
+	return str
 }
 
 func (wb *WriteBuffer) Get() []schema.Point {
