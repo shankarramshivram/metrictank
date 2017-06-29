@@ -268,9 +268,9 @@ func TestFlushUnsortedData(t *testing.T) {
 
 func BenchmarkAddInOrder(b *testing.B) {
 	data := make([]schema.Point, b.N)
+	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 1}, nil)
 	b.ResetTimer()
 
-	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 1}, nil)
 	for i := 0; i < b.N; i++ {
 		buf.Add(data[i].Ts, data[i].Val)
 	}
@@ -279,27 +279,35 @@ func BenchmarkAddInOrder(b *testing.B) {
 func BenchmarkAddOutOfOrder(b *testing.B) {
 	data := make([]schema.Point, b.N)
 	unsortedData := unsort(data, 10)
+	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 1}, nil)
 	b.ResetTimer()
 
-	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 1}, nil)
 	for i := 0; i < b.N; i++ {
 		buf.Add(unsortedData[i].Ts, unsortedData[i].Val)
 	}
 }
 
-/*func BenchmarkFlush(b *testing.B) {
-	buffers := make([]*WriteBuffer, b.N)
-	receiver := func(i uint32, j float64) {}
-	for i := 0; i < b.N; i++ {
-		for j := 0; j < 2000; j++ {
-			buffers[i] = NewWriteBuffer(600, 1, 30, nil)
-			buffers[i].Add(uint32(j), 1)
-		}
+func benchmarkAddAndFlushX(b *testing.B, x uint32) {
+	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 600}, func(ts uint32, val float64) {})
+	ts := uint32(1)
+	for ; ts <= x; ts++ {
+		buf.Add(ts, float64(ts*100))
 	}
-
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		buffers[i].FlushIfReady()
+	for run := 0; run < b.N; run++ {
+		for i := uint32(0); i < x; i++ {
+			buf.Add(ts, float64(ts*100))
+			ts++
+		}
+		buf.FlushIfReady()
 	}
-}*/
+}
+
+func BenchmarkAddAndFlush600(b *testing.B) {
+	benchmarkAddAndFlushX(b, uint32(600))
+}
+
+func BenchmarkAddAndFlush10(b *testing.B) {
+	benchmarkAddAndFlushX(b, uint32(10))
+}
