@@ -43,7 +43,7 @@ func (c *Checker) Add(ts uint32, val float64) {
 func (c *Checker) Verify(primary bool, from, to, first, last uint32) {
 	currentClusterStatus := cluster.Manager.IsPrimary()
 	cluster.Manager.SetPrimary(primary)
-	_, iters := c.agg.Get(from, to)
+	res := c.agg.Get(from, to)
 	// we don't do checking or fancy logic, it is assumed that the caller made sure first and last are ts of actual points
 	var pi int // index of first point we want
 	var pj int // index of last point we want
@@ -53,7 +53,7 @@ func (c *Checker) Verify(primary bool, from, to, first, last uint32) {
 	}
 	c.t.Logf("verifying AggMetric.Get(%d,%d) =?= %d <= ts <= %d", from, to, first, last)
 	index := pi - 1
-	for _, iter := range iters {
+	for _, iter := range res.Iters {
 		for iter.Next() {
 			index++
 			tt, vv := iter.Values()

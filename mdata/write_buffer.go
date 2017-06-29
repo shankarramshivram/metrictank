@@ -151,6 +151,9 @@ func (wb *WriteBuffer) formatted() string {
 }
 
 func (wb *WriteBuffer) Get() []schema.Point {
+	wb.RLock()
+	defer wb.RUnlock()
+
 	res := make([]schema.Point, 0, wb.len)
 	if wb.first == nil {
 		return res
