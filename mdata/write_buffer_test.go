@@ -1,6 +1,7 @@
 package mdata
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/raintank/metrictank/conf"
@@ -26,7 +27,7 @@ func testAddAndGet(t *testing.T, conf *conf.WriteBufferConf, collector func(uint
 		t.Fatal("Length of returned and testData data unequal")
 	}
 	if !pointSlicesAreEqual(expectedData, returned) {
-		t.Fatal("Returned data does not match testData data %+v, %+v", testData, returned)
+		t.Fatal(fmt.Sprintf("Returned data does not match testData data %+v, %+v", testData, returned))
 	}
 }
 
@@ -34,7 +35,7 @@ func pointSlicesAreEqual(a, b []schema.Point) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i, _ := range a {
+	for i := range a {
 		if (a[i].Ts != b[i].Ts) || (a[i].Val != b[i].Val) {
 			return false
 		}
@@ -217,7 +218,7 @@ func TestAddAndGetOutOfOrderOutOfWindow(t *testing.T) {
 	}
 	testAddAndGet(t, conf, collector, testData, expectedData, true)
 	if !pointSlicesAreEqual(flushedData, expectedFlushedData) {
-		t.Fatal("Flushed data does not match expected flushed data: %+v %+v", flushedData, expectedFlushedData)
+		t.Fatal(fmt.Sprintf("Flushed data does not match expected flushed data: %+v %+v", flushedData, expectedFlushedData))
 	}
 }
 
