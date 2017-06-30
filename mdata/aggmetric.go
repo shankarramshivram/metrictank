@@ -65,7 +65,7 @@ func NewAggMetric(store Store, cachePusher cache.CachePusher, key string, retent
 		lastWrite: uint32(time.Now().Unix()),
 	}
 	if agg != nil && agg.WriteBufferConf != nil {
-		m.wb = NewWriteBuffer(agg.WriteBufferConf, m.Add)
+		m.wb = NewWriteBuffer(agg.WriteBufferConf, m.add)
 	}
 
 	for _, ret := range retentions[1:] {
