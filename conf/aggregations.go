@@ -109,9 +109,17 @@ func ReadAggregations(file string) (Aggregations, error) {
 				err = fmt.Errorf("[%s]: Failed to parse write buffer conf, expected 2 numbers: %s", item.Name, writeBufferStr)
 				return Aggregations{}, err
 			}
-			item.WriteBufferConf = &WriteBufferConf{
-				ReorderWindow: uint32(reorderWindow),
-				FlushMin:      uint32(flushMin),
+			if flushMin < 1 && reorderWindow > 0 {
+				err = fmt.Errorf("[%s]: Failed to parse write buffer conf, flush minimum needs to be > 0: %s", item.Name, writeBufferStr)
+				return Aggregations{}, err
+
+			}
+			// if reorderWindow == 0 we just disable the buffer
+			if reorderWindow > 0 {
+				item.WriteBufferConf = &WriteBufferConf{
+					ReorderWindow: uint32(reorderWindow),
+					FlushMin:      uint32(flushMin),
+				}
 			}
 		}
 
