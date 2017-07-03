@@ -314,8 +314,8 @@ func AggMetricKey(key, archive string, aggSpan uint32) string {
 func (s *Server) getSeriesFixed(req models.Req, consolidator consolidation.Consolidator) []schema.Point {
 	ctx := newRequestContext(&req, consolidator)
 	res := s.getSeries(ctx)
-	points := append(s.itersToPoints(ctx, res.Iters), res.Raw...)
-	return Fix(points, req.From, req.To, req.ArchInterval)
+	res.Raw = append(s.itersToPoints(ctx, res.Iters), res.Raw...)
+	return Fix(res.Raw, req.From, req.To, req.ArchInterval)
 }
 
 func (s *Server) getSeries(ctx *requestContext) mdata.MetricResult {

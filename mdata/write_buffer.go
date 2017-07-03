@@ -11,21 +11,20 @@ import (
 var bufPool = sync.Pool{New: func() interface{} { return &entry{} }}
 
 /*
- * The write buffer keeps a time-window of data during which it is ok to send data out of order.
+ * The write buffer keeps a window of data during which it is ok to send data out of order.
  * Once the reorder window plus flush minimum has passed it will try to flush the data out.
- * The write buffer itself is not thread safe because it is used by AggMetric, which is, so
- * there is no locking in the buffer.
+ * The write buffer itself is not thread safe because it is only used by AggMetric,
+ * which is thread safe, so there is no locking in the buffer.
  */
 
 type WriteBuffer struct {
-	reorderWindow uint32 // window size in datapoints during which out of order is allowed
-	len           uint32
+	reorderWindow uint32                // window size in datapoints during which out of order is allowed
+	len           uint32                // number of datapoints in the buffer
 	lastFlush     uint32                // the timestamp of the last point that's been flushed
-	flushMin      uint32                // min count of datapoints to trigger a flush on
+	flushMin      uint32                // min number of datapoints to flush at once
 	first         *entry                // first buffer entry
 	last          *entry                // last buffer entry
-	flushStart    *entry                // entry from where a flush will start to walk the list
-	flush         func(uint32, float64) //flushing function
+	flush         func(uint32, float64) // flushing callback
 }
 
 type entry struct {
@@ -144,6 +143,7 @@ func (wb *WriteBuffer) formatted() string {
 	return str
 }
 
+// returns all the data in the buffer as a raw list of points
 func (wb *WriteBuffer) Get() []schema.Point {
 	res := make([]schema.Point, 0, wb.len)
 	if wb.first == nil {
