@@ -12,12 +12,12 @@ var bufPool = sync.Pool{New: func() interface{} { return &entry{} }}
 
 /*
  * The write buffer keeps a time-window of data during which it is ok to send data out of order.
- * Once the reorder window has passed it will try to flush the data out.
- * The write buffer itself is not thread safe because it is used by AggMetric, which is.
+ * Once the reorder window plus flush minimum has passed it will try to flush the data out.
+ * The write buffer itself is not thread safe because it is used by AggMetric, which is, so
+ * there is no locking in the buffer.
  */
 
 type WriteBuffer struct {
-	sync.RWMutex
 	reorderWindow uint32 // window size in datapoints during which out of order is allowed
 	len           uint32
 	lastFlush     uint32                // the timestamp of the last point that's been flushed
@@ -43,9 +43,6 @@ func NewWriteBuffer(conf *conf.WriteBufferConf, flush func(uint32, float64)) *Wr
 }
 
 func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
-	wb.Lock()
-	defer wb.Unlock()
-
 	// out of order and too old
 	if ts < wb.lastFlush {
 		return false
@@ -63,6 +60,10 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 		wb.last = e
 		wb.len++
 	} else {
+		if ts < wb.last.ts {
+			metricsReordered.Inc()
+		}
+
 		// in the normal case data should be added in order, so this will only iterate once
 		for i := wb.last; i != nil; i = i.prev {
 			if ts > i.ts {
@@ -95,15 +96,15 @@ func (wb *WriteBuffer) Add(ts uint32, val float64) bool {
 		}
 	}
 
+	wb.flushIfReady()
+
 	return true
 }
 
 // if buffer is ready for flushing, this will flush it
-func (wb *WriteBuffer) FlushIfReady() {
-	wb.RLock()
+func (wb *WriteBuffer) flushIfReady() {
 	// not enough data, not ready to flush
 	if wb.len < wb.flushMin+wb.reorderWindow {
-		wb.RUnlock()
 		return
 	}
 
@@ -113,13 +114,6 @@ func (wb *WriteBuffer) FlushIfReady() {
 		cnt++
 	}
 
-	wb.RUnlock()
-
-	// split the list at flushEnd and then flush the older part
-	wb.Lock()
-	defer wb.Unlock()
-
-	//panic(fmt.Sprintf("flushEnd: %p\nbuffer: %s", flushEnd, wb.formatted()))
 	for i := wb.first; ; i = i.next {
 		wb.flush(i.ts, i.val)
 		bufPool.Put(i)
@@ -151,9 +145,6 @@ func (wb *WriteBuffer) formatted() string {
 }
 
 func (wb *WriteBuffer) Get() []schema.Point {
-	wb.RLock()
-	defer wb.RUnlock()
-
 	res := make([]schema.Point, 0, wb.len)
 	if wb.first == nil {
 		return res

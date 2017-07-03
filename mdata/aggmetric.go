@@ -430,6 +430,9 @@ func (a *AggMetric) persist(pos int) {
 }
 
 func (a *AggMetric) Add(ts uint32, val float64) {
+	a.Lock()
+	defer a.Unlock()
+
 	if a.wb == nil {
 		// write directly
 		a.add(ts, val)
@@ -437,17 +440,13 @@ func (a *AggMetric) Add(ts uint32, val float64) {
 		// write through write buffer, returns false if ts is out of reorder window
 		if !a.wb.Add(ts, val) {
 			metricsTooOld.Inc()
-		} else {
-			a.wb.FlushIfReady()
 		}
 	}
 }
 
 // don't ever call with a ts of 0, cause we use 0 to mean not initialized!
+// assumes a write lock is held by the call-site
 func (a *AggMetric) add(ts uint32, val float64) {
-	a.Lock()
-	defer a.Unlock()
-
 	t0 := ts - (ts % a.ChunkSpan)
 
 	if len(a.Chunks) == 0 {

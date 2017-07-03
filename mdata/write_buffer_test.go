@@ -16,7 +16,7 @@ func testAddAndGet(t *testing.T, conf *conf.WriteBufferConf, collector func(uint
 		if !success {
 			gotFailure = true
 		}
-		b.FlushIfReady()
+		b.flushIfReady()
 	}
 	if expectAddFail && !gotFailure {
 		t.Fatal("Expected an add to fail, but they all succeeded")
@@ -183,7 +183,7 @@ func TestOmitFlushIfNotEnoughData(t *testing.T) {
 	for i := uint32(1); i < 10; i++ {
 		b.Add(i, float64(i*100))
 	}
-	b.FlushIfReady()
+	b.flushIfReady()
 }
 
 func TestAddAndGetOutOfOrderOutOfWindow(t *testing.T) {
@@ -234,7 +234,7 @@ func TestFlushSortedData(t *testing.T) {
 		buf.Add(uint32(i), float64(i))
 	}
 
-	buf.FlushIfReady()
+	buf.flushIfReady()
 	for i := 0; i < 400; i++ {
 		if results[i].Ts != uint32(i+100) || results[i].Val != float64(i+100) {
 			t.Fatalf("Unexpected results %+v", results)
@@ -258,7 +258,7 @@ func TestFlushUnsortedData(t *testing.T) {
 	for i := 0; i < len(data); i++ {
 		buf.Add(unsortedData[i].Ts, unsortedData[i].Val)
 	}
-	buf.FlushIfReady()
+	buf.flushIfReady()
 	for i := 0; i < 400; i++ {
 		if results[i].Ts != uint32(i+100) || results[i].Val != float64(i+100) {
 			t.Fatalf("Unexpected results %+v", results)
@@ -300,7 +300,7 @@ func benchmarkAddAndFlushX(b *testing.B, x uint32) {
 			buf.Add(ts, float64(ts*100))
 			ts++
 		}
-		buf.FlushIfReady()
+		buf.flushIfReady()
 	}
 }
 

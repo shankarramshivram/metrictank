@@ -94,7 +94,7 @@ func ReadAggregations(file string) (Aggregations, error) {
 		writeBufferStr := s.ValueOf("writeBuffer")
 		if len(writeBufferStr) > 0 {
 			writeBufferStrs := strings.Split(writeBufferStr, ",")
-			if len(writeBufferStrs) > 0 {
+			if len(writeBufferStrs) != 2 {
 				err = fmt.Errorf("[%s]: Failed to parse write buffer conf, expected 2 parts: %s", item.Name, writeBufferStr)
 				return Aggregations{}, err
 			}
