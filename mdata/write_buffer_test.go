@@ -287,27 +287,36 @@ func BenchmarkAddOutOfOrder(b *testing.B) {
 	}
 }
 
-func benchmarkAddAndFlushX(b *testing.B, x uint32) {
-	buf := NewWriteBuffer(&conf.WriteBufferConf{ReorderWindow: uint32(b.N), FlushMin: 600}, func(ts uint32, val float64) {})
+func benchmarkAddAndFlushX(b *testing.B, datapoints, flushMin, reorderWindow uint32) {
+	buf := NewWriteBuffer(
+		&conf.WriteBufferConf{ReorderWindow: reorderWindow, FlushMin: flushMin},
+		func(ts uint32, val float64) {},
+	)
 	ts := uint32(1)
-	for ; ts <= x; ts++ {
+	for ; ts <= datapoints; ts++ {
 		buf.Add(ts, float64(ts*100))
 	}
+	buf.flushIfReady()
+
 	b.ResetTimer()
 
 	for run := 0; run < b.N; run++ {
-		for i := uint32(0); i < x; i++ {
+		ts := uint32(1)
+		for ; ts <= datapoints; ts++ {
 			buf.Add(ts, float64(ts*100))
-			ts++
 		}
 		buf.flushIfReady()
 	}
 }
 
-func BenchmarkAddAndFlush600(b *testing.B) {
-	benchmarkAddAndFlushX(b, uint32(600))
+func BenchmarkAddAndFlush10000(b *testing.B) {
+	benchmarkAddAndFlushX(b, 10000, 100, 1000)
 }
 
-func BenchmarkAddAndFlush10(b *testing.B) {
-	benchmarkAddAndFlushX(b, uint32(10))
+func BenchmarkAddAndFlush1000(b *testing.B) {
+	benchmarkAddAndFlushX(b, 1000, 10, 100)
+}
+
+func BenchmarkAddAndFlush100(b *testing.B) {
+	benchmarkAddAndFlushX(b, 100, 1, 10)
 }
