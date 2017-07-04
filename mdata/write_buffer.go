@@ -107,22 +107,19 @@ func (wb *WriteBuffer) flushIfReady() {
 		return
 	}
 
-	// seek the entry up to which we'll want to flush
-	flushEnd := wb.last
-	for cnt := uint32(0); cnt < wb.reorderWindow; flushEnd = flushEnd.prev {
-		cnt++
-	}
+	// we want to flush until the length is equal to the reorder window
+	flushCount := wb.len - wb.reorderWindow
 
-	for i := wb.first; ; i = i.next {
-		wb.flush(i.ts, i.val)
-		bufPool.Put(i)
-		if i == flushEnd {
-			break
-		}
+	nextEntry := wb.first
+	for i := uint32(0); i < flushCount; i++ {
+		flushEntry := nextEntry
+		nextEntry = flushEntry.next
+		wb.flush(flushEntry.ts, flushEntry.val)
+		bufPool.Put(flushEntry)
 	}
 
 	wb.len = wb.reorderWindow
-	wb.first = flushEnd.next
+	wb.first = nextEntry
 	wb.first.prev = nil
 	wb.lastFlush = wb.first.ts
 }
