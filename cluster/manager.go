@@ -77,6 +77,12 @@ func (c *ClusterManager) MemberList() []Node {
 	return list
 }
 
+func (c *ClusterManager) Join(peers []string) {
+	c.Lock()
+	c.list.Join(peers)
+	c.Unlock()
+}
+
 // report the cluster stats every time there is a change to the cluster state.
 // it is assumed that the lock is acquired before calling this method.
 func (c *ClusterManager) clusterStats() {

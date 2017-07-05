@@ -51,6 +51,25 @@ func (s *Server) getClusterStatus(ctx *middleware.Context) {
 	response.Write(ctx, response.NewJson(200, status, ""))
 }
 
+func (s *Server) postClusterMembers(ctx *middleware.Context, req models.ClusterMembers) {
+	memberNames := make(map[string]struct{})
+	toJoin := make([]string, 0)
+
+	for _, memberNode := range cluster.Manager.MemberList() {
+		memberNames[memberNode.Name] = struct{}{}
+	}
+
+	for _, peerName := range req.Members {
+		if _, ok := memberNames[peerName]; !ok {
+			toJoin = append(toJoin, peerName)
+		}
+	}
+
+	if len(toJoin) > 0 {
+		cluster.Manager.Join(toJoin)
+	}
+}
+
 // IndexFind returns a sequence of msgp encoded idx.Node's
 func (s *Server) indexFind(ctx *middleware.Context, req models.IndexFind) {
 	// metricDefs only get updated periodically (when using CassandraIdx), so we add a 1day (86400seconds) buffer when

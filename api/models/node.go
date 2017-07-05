@@ -14,6 +14,10 @@ type ClusterStatus struct {
 	Members     []cluster.Node `json:"members"`
 }
 
+type ClusterMembers struct {
+	Members []string `json:"members"`
+}
+
 type IndexList struct {
 	OrgId int `json:"orgId" form:"orgId" binding:"Required"`
 }
