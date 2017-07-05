@@ -65,8 +65,25 @@ func (s *Server) postClusterMembers(ctx *middleware.Context, req models.ClusterM
 		}
 	}
 
-	if len(toJoin) > 0 {
-		cluster.Manager.Join(toJoin)
+	resp := models.ClusterMembersResp{
+		Status:       "ok",
+		MembersAdded: 0,
+	}
+
+	if len(toJoin) == 0 {
+		response.Write(ctx, response.NewJson(200, resp, ""))
+		return
+	}
+
+	n, err := cluster.Manager.Join(toJoin)
+	if err != nil {
+		response.Write(ctx, response.NewError(http.StatusBadRequest, fmt.Sprintf(
+			"error when joining cluster members: %s", err.Error(),
+			err.Error())),
+		)
+	} else {
+		resp.MembersAdded = n
+		response.Write(ctx, response.NewJson(200, resp, ""))
 	}
 }
 

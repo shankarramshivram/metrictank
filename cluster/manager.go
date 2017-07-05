@@ -77,10 +77,8 @@ func (c *ClusterManager) MemberList() []Node {
 	return list
 }
 
-func (c *ClusterManager) Join(peers []string) {
-	c.Lock()
-	c.list.Join(peers)
-	c.Unlock()
+func (c *ClusterManager) Join(peers []string) (int, error) {
+	return c.list.Join(peers)
 }
 
 // report the cluster stats every time there is a change to the cluster state.

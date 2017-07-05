@@ -18,6 +18,11 @@ type ClusterMembers struct {
 	Members []string `json:"members"`
 }
 
+type ClusterMembersResp struct {
+	Status       string `json:"status"`
+	MembersAdded int    `json:"membersAdded"`
+}
+
 type IndexList struct {
 	OrgId int `json:"orgId" form:"orgId" binding:"Required"`
 }
